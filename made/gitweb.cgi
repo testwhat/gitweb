@@ -2883,8 +2883,8 @@ sub git_get_file_or_project_config {
 }
 
 sub git_get_project_description {
-	my $path = shift;
-	return git_get_file_or_project_config($path, 'description');
+	#my $path = shift;
+	return ''; #git_get_file_or_project_config($path, 'description');
 }
 
 sub git_get_project_category {
