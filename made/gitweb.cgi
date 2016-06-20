@@ -1108,6 +1108,9 @@ sub evaluate_and_validate_params {
 			die_error(400, "Invalid option parameter for this action");
 		}
 	}
+	if ($action eq 'shortlog' || $action eq 'log' || $action eq 'history' || $action eq 'search') {
+		@extra_options = '--no-merges';
+	}
 
 	our $hash_parent_base = $input_params{'hash_parent_base'};
 	if (defined $hash_parent_base) {
