@@ -4180,6 +4180,15 @@ EOF
 		                         -alt => "git",
 		                         -class => "logo"}));
 	}
+
+	print '<span style="margin-right:16px">' . esc_url($my_uri) . '</span>';
+	print $cgi->a({-href => esc_url($base_url),
+	               -class => 'plm',
+	               -title => 'Lite project list'}, 'Lite list');
+	print $cgi->a({-href => esc_url($base_url).'?full=1',
+	               -class => 'plm',
+	               -title => 'Full project list'}, 'Full list');
+	print $cgi->a({-href => '../', -class => 'plm'}, 'Home');
 	print_nav_breadcrumbs(%opts);
 	print "</div>\n";
 
@@ -5525,6 +5534,7 @@ sub git_project_search_form {
 	      $cgi->hidden(-name => 'a', -value => 'project_list')  . "\n";
 	print $cgi->hidden(-name => 'pf', -value => $project_filter). "\n"
 		if (defined $project_filter);
+	print $cgi->hidden(-name => 'full', -value => 1). "\n";
 	print $cgi->textfield(-name => 's', -value => $searchtext,
 	                      -title => "Search project by name and description$limit",
 	                      -size => 60) . "\n" .
@@ -5535,7 +5545,7 @@ sub git_project_search_form {
 	      $cgi->submit(-name => 'btnS', -value => 'Search') .
 	      $cgi->end_form() . "\n" .
 	      $cgi->a({-href => href(project => undef, searchtext => undef,
-	                             project_filter => $project_filter)},
+	                             project_filter => $project_filter) . '?full=1'},
 	              esc_html("List all projects$limit")) . "<br />\n";
 	print "</div>\n";
 }
