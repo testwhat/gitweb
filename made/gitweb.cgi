@@ -1129,7 +1129,7 @@ sub evaluate_and_validate_params {
 
 	our $searchtype = $input_params{'searchtype'};
 	if (defined $searchtype) {
-		if ($searchtype =~ m/[^a-z]/) {
+		if ($searchtype =~ m/[^a-z-]/) {
 			die_error(400, "Invalid searchtype parameter");
 		}
 	}
@@ -4117,7 +4117,7 @@ sub print_search_form {
 	      $cgi->input({-name=>"a", -value=>"search", -type=>"hidden"}) . "\n" .
 	      $cgi->input({-name=>"h", -value=>$search_hash, -type=>"hidden"}) . "\n" .
 	      $cgi->popup_menu(-name => 'st', -default => 'commit',
-	                       -values => ['commit', 'grep', 'author', 'committer', 'pickaxe']) .
+	                       -values => ['commit', 'grep', 'author', 'committer', 'pickaxe', 'commit-in-tag']) .
 	      " " . $cgi->a({-href => href(action=>"search_help"),
 			     -title => "search help" }, "?") . " search:\n",
 	      $cgi->textfield(-name => "s", -value => $searchtext, -override => 1) . "\n" .
@@ -8033,6 +8033,122 @@ sub git_history {
 	                $file_name, $hash);
 }
 
+sub print_commit {
+	my $co = shift;
+	my $hash = shift;
+	my $refs = git_get_references();
+	my $ref = format_ref_marker($refs, $co->{'id'});
+	my $parent  = $co->{'parent'};
+	my $parents = $co->{'parents'};
+	git_print_header_div('commitdiff', esc_html($co->{'title'}) . $ref, $hash);
+	print "<div class=\"title_text\">\n" .
+	      "<table class=\"object_header\">\n";
+	git_print_authorship_rows($co);
+	print "<tr><td>commit</td><td class=\"sha1\">$co->{'id'}</td></tr>\n";
+	print "<tr>" .
+	      "<td>tree</td>" .
+	      "<td class=\"sha1\">" .
+	      $cgi->a({-href => href(action=>"tree", hash=>$co->{'tree'}, hash_base=>$hash),
+	               class => "list"}, $co->{'tree'}) .
+	      "</td>" .
+	      "<td class=\"link\">" .
+	      $cgi->a({-href => href(action=>"tree", hash=>$co->{'tree'}, hash_base=>$hash)},
+	              "tree");
+	my $snapshot_links = format_snapshot_links($hash);
+	if (defined $snapshot_links) {
+		print " | " . $snapshot_links;
+	}
+	print "</td></tr>\n";
+
+	foreach my $par (@$parents) {
+		print "<tr>" .
+		      "<td>parent</td>" .
+		      "<td class=\"sha1\">" .
+		      $cgi->a({-href => href(action=>"commit", hash=>$par),
+		               class => "list"}, $par) .
+		      "</td>" .
+		      "<td class=\"link\">" .
+		      $cgi->a({-href => href(action=>"commit", hash=>$par)}, "commit") .
+		      " | " .
+		      $cgi->a({-href => href(action=>"commitdiff", hash=>$hash, hash_parent=>$par)}, "diff") .
+		      "</td>" .
+		      "</tr>\n";
+	}
+	print "</table></div>\n";
+
+	print "<div class=\"page_body\">\n";
+	git_print_log($co->{'comment'});
+	print "</div>\n";
+
+	my @difftree;
+	open my $fd, "-|", git_cmd(), "diff-tree", '-r', "--no-commit-id",
+		@diff_opts,
+		(@$parents <= 1 ? $parent : '-c'),
+		$hash, "--"
+		or die_error(500, "Open git-diff-tree failed");
+	@difftree = map { chomp; $_ } <$fd>;
+	git_difftree_body(\@difftree, $hash, @$parents);
+}
+
+
+sub git_search_commit_in_tags {
+	open my $fd, '-|' , git_cmd(), 'tag', '--sort=-creatordate', '--format',
+		'--format=%(objectname) %(objecttype) %(refname) %(*objectname) %(*objecttype) %(subject)%00%(creator)',
+		'--contains', $searchtext;
+	return unless $fd;
+
+	my @tags;
+	while (my $line = <$fd>) {
+		my %ref_item;
+
+		chomp $line;
+		my ($refinfo, $creatorinfo) = split(/\0/, $line);
+		my ($id, $type, $name, $refid, $reftype, $title) = split(' ', $refinfo, 6);
+		my ($creator, $epoch, $tz) =
+			($creatorinfo =~ /^(.*) ([0-9]+) (.*)$/);
+		$ref_item{'fullname'} = $name;
+		$name =~ s!^refs/tags/!!;
+
+		$ref_item{'type'} = $type;
+		$ref_item{'id'} = $id;
+		$ref_item{'name'} = $name;
+		if ($type eq "tag") {
+			$ref_item{'subject'} = $title;
+			$ref_item{'reftype'} = $reftype;
+			$ref_item{'refid'}   = $refid;
+		} else {
+			$ref_item{'reftype'} = $type;
+			$ref_item{'refid'}   = $id;
+		}
+
+		if ($type eq "tag" || $type eq "commit") {
+			$ref_item{'epoch'} = $epoch;
+			if ($epoch) {
+				$ref_item{'age'} = age_string(time - $ref_item{'epoch'});
+			} else {
+				$ref_item{'age'} = "unknown";
+			}
+		}
+
+		push @tags, \%ref_item;
+	}
+	close $fd or die_error(400, "No matched tags");
+
+	my %co = parse_commit($searchtext);
+	if (!%co) {
+		die_error(404, "Unknown commit object");
+	}
+
+	git_header_html();
+	print_commit(\%co, $searchtext);
+
+	if (@tags) {
+		git_print_header_div('tags', 'The commit existed in below tags');
+		git_heads_body(\@tags);
+	}
+	git_footer_html();
+}
+
 sub git_search {
 	$searchtype ||= 'commit';
 
@@ -8053,6 +8169,10 @@ sub git_search {
 
 	if (!defined $searchtext) {
 		die_error(400, "Text field is empty");
+	}
+	if ($searchtype eq 'commit-in-tag') {
+		git_search_commit_in_tags();
+		return;
 	}
 	if (!defined $hash) {
 		$hash = git_get_head_hash($project);
